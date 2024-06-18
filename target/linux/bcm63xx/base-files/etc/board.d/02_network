@@ -40,6 +40,7 @@ sagem,fast-2504n|\
 sagem,fast-2704-v2|\
 technicolor,tg582n|\
 technicolor,tg582n-telecom-italia|\
+
 zyxel,p870hw-51a-v2)
 	ucidef_add_switch "switch0" \
 		"0:lan:1" "1:lan:2" "2:lan:3" "3:lan:4" "8t@eth0"
@@ -143,6 +144,11 @@ netgear,dgnd3700-v1)
 sagem,fast-2704n|\
 sercomm,ad1018|\
 sercomm,ad1018-nor)
+	ucidef_add_switch "switch0" \
+		"1:lan:3" "2:lan:2" "3:lan:1" "0:wan" "8t@eth0"
+	;;
+tp-link,td-w8968-v3)
+	ucidef_set_interfaces_lan_wan "eth0.1" "eth0.2"
 	ucidef_add_switch "switch0" \
 		"1:lan:3" "2:lan:2" "3:lan:1" "0:wan" "8t@eth0"
 	;;

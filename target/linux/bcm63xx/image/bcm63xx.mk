@@ -1218,6 +1218,7 @@ endef
 TARGET_DEVICES += telsey_magic
 
 ### TP-Link ###
+
 define Device/tp-link_td-w8900gb
   $(Device/bcm63xx-legacy)
   DEVICE_VENDOR := TP-Link
@@ -1230,6 +1231,18 @@ define Device/tp-link_td-w8900gb
   DEFAULT := n
 endef
 TARGET_DEVICES += tp-link_td-w8900gb
+
+define Device/tp-link_td-w8968-v3
+  $(Device/bcm63xx)
+  DEVICE_VENDOR := TP-Link
+  DEVICE_MODEL := TD-W8968
+  DEVICE_VARIANT := V3
+  CFE_BOARD_ID := 96318REF
+  CHIP_ID := 6318
+  FLASH_MB := 8
+  DEVICE_PACKAGES := $(B43_PACKAGES) $(USB2_PACKAGES)
+endef
+TARGET_DEVICES += tp-link_td-w8968-v3
 
 ### USRobotics ###
 define Device/usrobotics_usr9108
