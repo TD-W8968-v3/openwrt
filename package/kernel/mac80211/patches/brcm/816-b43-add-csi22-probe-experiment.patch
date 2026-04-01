@@ -1,0 +1,107 @@
+--- a/drivers/net/wireless/broadcom/b43/xmit.c	2026-04-01 20:26:25.347408067 +0530
++++ b/drivers/net/wireless/broadcom/b43/xmit.c	2026-04-01 20:30:06.344144210 +0530
+@@ -19,6 +19,46 @@
+ #include "dma.h"
+ #include "pio.h"
+ 
++#include <linux/etherdevice.h>
++#include <linux/moduleparam.h>
++
++static int b43_modparam_csi_rx_probe;
++module_param_named(csi_rx_probe, b43_modparam_csi_rx_probe, int, 0644);
++MODULE_PARM_DESC(csi_rx_probe, "Enable RX telemetry probe: 0=off, 1=on");
++
++static char b43_modparam_csi_rx_srcmac[20];
++module_param_string(csi_rx_srcmac, b43_modparam_csi_rx_srcmac,
++                    sizeof(b43_modparam_csi_rx_srcmac), 0644);
++MODULE_PARM_DESC(csi_rx_srcmac, "Optional source-MAC filter (aa:bb:cc:dd:ee:ff)");
++
++static s16 b43_csi_rx_decode_foff(u16 phystat2)
++{
++	u16 raw = phystat2 & B43_RX_PHYST2_FOFF;
++	if (raw & 0x0200)
++		return (s16)(raw | 0xFC00);
++	return (s16)raw;
++}
++
++static void b43_csi_rx_sample(struct b43_wldev *dev, const u8 *src,
++			      s16 signal, u8 noise, s16 foff, u16 chanid,
++			      u16 phystat4, u16 phystat5, bool have_phystat45)
++{
++	u8 filter_addr[ETH_ALEN];
++
++	if (b43_modparam_csi_rx_srcmac[0]) {
++		if (mac_pton(b43_modparam_csi_rx_srcmac, filter_addr)) {
++			if (!ether_addr_equal(src, filter_addr))
++				return;
++		}
++	}
++
++	b43info(dev->wl,
++		"CSI-RX pkt: src=%pM sig=%d noise=%u foff=%d chan=%u phy4=%04x phy5=%04x\n",
++		src, signal, noise, foff, chanid,
++		have_phystat45 ? phystat4 : 0, have_phystat45 ? phystat5 : 0);
++}
++
++
+ static const struct b43_tx_legacy_rate_phy_ctl_entry b43_tx_legacy_rate_phy_ctl[] = {
+ 	{ B43_CCK_RATE_1MB,	0x0,			0x0 },
+ 	{ B43_CCK_RATE_2MB,	0x0,			0x1 },
+@@ -636,7 +676,10 @@ void b43_rx(struct b43_wldev *dev, struc
+ 	struct ieee80211_hdr *wlhdr;
+ 	const struct b43_rxhdr_fw4 *rxhdr = _rxhdr;
+ 	__le16 fctl;
+-	u16 phystat0, phystat3;
++	u16 phystat0, phystat2, phystat3;
++	u16 phystat4 = 0, phystat5 = 0;
++	bool have_phystat45 = false;
++	s16 foff = 0;
+ 	u16 chanstat, mactime;
+ 	u32 macstat;
+ 	u16 chanid;
+@@ -646,9 +689,13 @@ void b43_rx(struct b43_wldev *dev, struc
+ 
+ 	/* Get metadata about the frame from the header. */
+ 	phystat0 = le16_to_cpu(rxhdr->phy_status0);
++	phystat2 = le16_to_cpu(rxhdr->phy_status2);
+ 	phystat3 = le16_to_cpu(rxhdr->phy_status3);
+ 	switch (dev->fw.hdr_format) {
+ 	case B43_FW_HDR_598:
++		phystat4 = le16_to_cpu(rxhdr->format_598.phy_status4);
++		phystat5 = le16_to_cpu(rxhdr->format_598.phy_status5);
++		have_phystat45 = true;
+ 		macstat = le32_to_cpu(rxhdr->format_598.mac_status);
+ 		mactime = le16_to_cpu(rxhdr->format_598.mac_time);
+ 		chanstat = le16_to_cpu(rxhdr->format_598.channel);
+@@ -722,6 +769,7 @@ void b43_rx(struct b43_wldev *dev, struc
+ 		status.signal = max_t(__s8,
+ 			max(rxhdr->phy_ht_power0, rxhdr->phy_ht_power1),
+ 			rxhdr->phy_ht_power2);
++		foff = b43_csi_rx_decode_foff(phystat2);
+ 		break;
+ 	case B43_PHYTYPE_N:
+ 		/* Broadcom has code for min and avg, but always uses max */
+@@ -729,6 +777,7 @@ void b43_rx(struct b43_wldev *dev, struc
+ 			status.signal = max(rxhdr->power1, rxhdr->power2);
+ 		else
+ 			status.signal = max(rxhdr->power0, rxhdr->power1);
++		foff = b43_csi_rx_decode_foff(phystat2);
+ 		break;
+ 	case B43_PHYTYPE_B:
+ 	case B43_PHYTYPE_G:
+@@ -775,6 +824,15 @@ void b43_rx(struct b43_wldev *dev, struc
+ 	}
+ 
+ 	chanid = (chanstat & B43_RX_CHAN_ID) >> B43_RX_CHAN_ID_SHIFT;
++	if (READ_ONCE(b43_modparam_csi_rx_probe) > 0 &&
++	    !(macstat & B43_RX_MAC_FCSERR) &&
++	    !ieee80211_is_ctl(fctl)) {
++			b43_csi_rx_sample(dev, wlhdr->addr2,
++					  status.signal, dev->stats.link_noise,
++					  foff, chanid, phystat4, phystat5,
++					  have_phystat45);
++	}
++
+ 	switch (chanstat & B43_RX_CHAN_PHYTYPE) {
+ 	case B43_PHYTYPE_G:
+ 		status.band = NL80211_BAND_2GHZ;
